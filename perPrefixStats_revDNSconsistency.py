@@ -12,12 +12,15 @@ Created on Thu Apr 20 09:53:42 2017
 1d. Check how many networks have DNSSEC delegations (ds-rdata) (reverse-dns)
 
 https://stat.ripe.net/data/reverse-dns-consistency/data.json?resource=193.0.0.0/21
+https://stat.ripe.net/data/dns-check/data.json?get_results=true&resource=200.193.193.in-addr.arpa
 """
 
 import urllib2, json
 from ipaddress import ip_network
 
 revDNSconsistency_service = 'https://stat.ripe.net/data/reverse-dns-consistency'
+dnsCheck_service = 'https://stat.ripe.net/data/dns-check'
+
 prefix = '193.0.0.0/21'
 network = ip_network(unicode(prefix, 'utf-8'))
 
@@ -27,6 +30,8 @@ if network.version == 4:
 else:
     version_key = 'ipv6'
     longestPref = 64
+
+issuesDict = dict()
 
 url = '{}/data.json?resource={}'.format(revDNSconsistency_service, prefix)
 r = urllib2.urlopen(url)
@@ -49,12 +54,23 @@ for domain in domains_list:
     try:    
         dnscheck_status = domain['dnscheck']['status']
         if dnscheck_status == 'ERROR':
+            domain_str = domain['domain']
             units_with_issues += units_covered_by_domain
+            dnsCheck_url = '{}/data.json?get_results=true&resource={}'.format(dnsCheck_service, domain_str)
+            r = urllib2.urlopen(dnsCheck_url)
+            text = r.read()
+            dns_check_obj = json.loads(text)
+            results = dns_check_obj['data']['results']
+            for result in results:
+                if result['class'] == 'error':
+                    if result['caption'] not in issuesDict:
+                        issuesDict[result['caption']] = 1
+                    else:
+                        issuesDict[result['caption']] += 1
+            
     except KeyError:
         noDNScheck = True
         break
 
 coverage = 100*float(covered_units)/total_units
 issuesPercentage = 100*float(units_with_issues)/covered_units
-
-

@@ -9,5 +9,4 @@
 3. And/or how many have signatures in the zone, but no rdata (2nd stage)
 4. Number of delegations sharing the same nameservers (2nd stage) (reverse-dns)
 4a. or a similar subset
-
-
+5. Check if there is a correlation between the allocation date and the percentage of delegations with issues (Shane)

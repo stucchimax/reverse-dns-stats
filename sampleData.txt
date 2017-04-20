@@ -1,0 +1,1 @@
+prefix|CountryCode|opaque_id|latency(int)|covered(percentage)|delegations_issues(percentage)|delegations_with_dnssec(percentage)

@@ -8,7 +8,7 @@ wget "ftp://ftp.ripe.net/ripe/dbase/split/ripe.db.domain.gz"
 
 # Get stats from delegated file
 
-./parse_delegated > delegated_parsed.csv
+./parse_delegated.py > delegated_parsed.csv
 
 # Get all the infos from the domain files
 

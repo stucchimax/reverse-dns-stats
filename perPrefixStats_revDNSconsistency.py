@@ -24,10 +24,26 @@ import urllib2, json
 from ipaddress import ip_network
 import pandas as pd
 import math
+import pickle
+
+prefixStats_file = './revDel_perPrefix_stats.csv'
+with open(prefixStats_file, 'wb') as stats:
+    stats.write('Prefix|AllocationDate|IPversion|CC|Opaque_ID|RevDelLatency|RevDelCoveragePercentage|RevDelIssuesPercentage (From total covered)|RevDelWithDNSSECPercentage (From total covered)|DNScheck (bool)|lastModifiedDate\n')
+
+issuesStats_file = './revDel_issues_stats.csv'
+with open(issuesStats_file, 'wb') as issues:
+    issues.write('issueType|numOfAppearences\n')
+
+nameserversStats_file = './revDel_nameservers_stats.csv'
+with open(nameserversStats_file, 'wb') as nameserversStats:
+    nameserversStats.write('nameserver|numOfDomains|unitsServedByNameserver(IPv4)|unitsServedByNameserver(IPv6)\n')
+    
+nameserversPickle = './revDel_domainsForNameservers.pkl'
 
 revDNSconsistency_service = 'https://stat.ripe.net/data/reverse-dns-consistency'
 dnsCheck_service = 'https://stat.ripe.net/data/dns-check'
-del_file = '??' # TODO complete with file name 
+
+del_file = './delegated_parsed.csv'
 del_columns = ['ip_version', 'network', 'count/prefLength', 'allocationDate', 'CC', 'opaque_id']
 
 delegated_df = pd.read_csv(
@@ -43,7 +59,6 @@ delegated_df = pd.read_csv(
 
 domainDB_file = './domainDB_data.csv'
 domainDB_columns = ['domain', 'nameservers', 'creationDate', 'lastModifiedDate', 'hasDS-Rdata']
-# domain,nserver,created,last-modified,ds-rdata(0/1)
 
 domainDB_df = pd.read_csv(
                     domainDB_file,
@@ -120,10 +135,18 @@ for index, alloc_row in delegated_df.iterrows():
             if nameserver not in nameserversDict:
                 nameserversDict[nameserver] = dict()
                 nameserversDict[nameserver]['domains'] = [domain]
-                nameserversDict[nameserver]['numOfUnits'] = units_covered_by_domain
+                if alloc_row['ip_version'] == 'ipv4':
+                    nameserversDict[nameserver]['numOfUnitsIPv4'] = units_covered_by_domain
+                else:
+                    nameserversDict[nameserver]['numOfUnitsIPv6'] = units_covered_by_domain
+                    
             else:
                 nameserversDict[nameserver]['domains'].append(domain)
-                nameserversDict[nameserver]['numOfUnits'] += units_covered_by_domain
+                if alloc_row['ip_version'] == 'ipv4':
+                    nameserversDict[nameserver]['numOfUnits_IPv4'] += units_covered_by_domain
+                else:
+                    nameserversDict[nameserver]['numOfUnits_IPv6'] += units_covered_by_domain
+
                 
         if domain_subset['hasDS-Rdata'] == 1:
             dnssec_units += units_covered_by_domain
@@ -132,9 +155,8 @@ for index, alloc_row in delegated_df.iterrows():
     issuesPercentage = 100*float(units_with_issues)/covered_units
     dnssecPercentage = 100*float(dnssec_units)/covered_units
 
-    # TODO write line to csv file
-
-    print '{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}'.format(
+    with open(prefixStats_file, 'a') as stats:
+        stats.write('{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}\n'.format(
                                                 prefix,
                                                 alloc_row['allocationDate'],
                                                 alloc_row['ip_version'],
@@ -145,16 +167,15 @@ for index, alloc_row in delegated_df.iterrows():
                                                 issuesPercentage,
                                                 dnssecPercentage,
                                                 DNScheck,
-                                                domain_subset['lastModifiedDate'])
+                                                domain_subset['lastModifiedDate']))
 
-print '---------------'
-print 'issueType|numOfAppearences'
-for issue_type in issuesDict:
-    print '{}|{}'.format(issue_type, issuesDict[issue_type])
+with open(issuesStats_file, 'a') as issues:
+    for issue_type in issuesDict:
+        issues.write('{}|{}\n'.format(issue_type, issuesDict[issue_type]))
 
-print '---------------'    
-print 'nameserver|numOfDomains|unitsServedByNameserver'
-for nameserver in nameserversDict:
-    print '{}|{}|{}'.format(nameserver, len(nameserversDict[nameserver]['domains']), nameserversDict[nameserver]['numOfUnits'])
+with open(nameserversStats_file, 'a') as nameserversStats:
+    for nameserver in nameserversDict:
+        nameserversStats.write('{}|{}|{}|{}\n'.format(nameserver, len(nameserversDict[nameserver]['domains']), nameserversDict[nameserver]['numOfUnits_IPv4'], nameserversDict[nameserver]['numOfUnits_IPv6']))
 
-# TODO write nameserversDict to pickle file so that we have the list of domains for each nameserver?
+with open(nameserversPickle , 'wb') as f:
+    pickle.dump(nameserversDict, f, pickle.HIGHEST_PROTOCOL)

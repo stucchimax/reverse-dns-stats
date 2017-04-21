@@ -1,12 +1,10 @@
 #!/usr/bin/env python
 
-import csv
-import gzip
-
-with open('delegated-ripencc-extended-latest', 'rb') as f:
-    reader = csv.reader(f, delimiter='|')
-    for line in reader:
-        if line[2] != 'asn' and (line[6] == "allocated" or line[6] == "assigned"):
-            print ("{},{},{},{},{},{}").format(line[2], line[3], line[4], line[5], line[1], line[7]);
-        
-        
+with open('delegated-ripencc-extended-latest') as f:
+    # throw away the first 4 header lines
+    for i in range(4):
+        f.next()
+    for line in f:
+        fields = line.strip().split('|')
+        if fields[2] != 'asn' and fields[6] in ('allocated', 'assigned'):
+            print ','.join((fields[2], fields[3], fields[4], fields[5], fields[1], fields[7]))

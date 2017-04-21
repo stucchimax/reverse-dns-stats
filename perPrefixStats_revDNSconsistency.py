@@ -98,7 +98,7 @@ epoch = date(1970, 1, 1)
 
 
 if DEBUG:
-    delegated_df = delegated_df[delegated_df['count/prefLength'] == 512].head()
+    delegated_df = delegated_df[(delegated_df['count/prefLength'] == 512) | (delegated_df['count/prefLength'] == 1024)].head(10)
                     
 for index, alloc_row in delegated_df.iterrows():
 
@@ -141,7 +141,7 @@ for index, alloc_row in delegated_df.iterrows():
             if DEBUG:
                 sys.stderr.write('    Domain {} found.\n'.format(domain_str))
             
-            units_covered_by_domain = pow(2, longestPref - domain['prefix'].split('/')[1])
+            units_covered_by_domain = pow(2, longestPref - int(domain['prefix'].split('/')[1]))
             covered_units += units_covered_by_domain
             
             dnscheck = domain['dnscheck']
@@ -216,24 +216,24 @@ for index, alloc_row in delegated_df.iterrows():
         elif DEBUG:
             sys.stderr.write('    Domain {} not found.\n'.format(domain_str))
         
-        allocDate = alloc_row['allocationDate'].date()
-        allocationAges.append((allocDate-epoch).days)
+    allocDate = alloc_row['allocationDate'].date()
+    allocationAges.append((allocDate-epoch).days)
 
-        if len(domainsCreationDates) > 0:
-            domainCreation = min(domainsCreationDates)
-        else:
-            domainCreation = epoch
-            
-        creationAges.append((domainCreation-epoch).days)
+    if len(domainsCreationDates) > 0:
+        domainCreation = min(domainsCreationDates)
+    else:
+        domainCreation = epoch
         
-        revDelLatency = (domainCreation - allocDate).days
+    creationAges.append((domainCreation-epoch).days)
+    
+    revDelLatency = (domainCreation - allocDate).days
 
-        if len(domainsLastModifiedDates) > 0:
-            lastModified = max(domainsLastModifiedDates)
-        else:
-            lastModified = epoch
-            
-        lastModifiedAges.append((lastModified-epoch).days)
+    if len(domainsLastModifiedDates) > 0:
+        lastModified = max(domainsLastModifiedDates)
+    else:
+        lastModified = epoch
+        
+    lastModifiedAges.append((lastModified-epoch).days)
     
     if total_units != 0:
         coveragePercentage = 100*float(covered_units)/total_units
@@ -277,7 +277,19 @@ with open(issuesStats_file, 'a') as issues:
 
 with open(nameserversStats_file, 'a') as nameserversStats:
     for nameserver in nameserversDict:
-        nameserversStats.write('{}|{}|{}|{}\n'.format(nameserver, len(nameserversDict[nameserver]['domains']), nameserversDict[nameserver]['numOfUnits_IPv4'], nameserversDict[nameserver]['numOfUnits_IPv6']))
+        if 'numOfUnits_IPv4' in nameserversDict[nameserver]:
+            units_ipv4 = nameserversDict[nameserver]['numOfUnits_IPv4']
+        else:
+            units_ipv4 = 0
+        
+        if 'numOfUnits_IPv6' in nameserversDict[nameserver]:
+            units_ipv6 = nameserversDict[nameserver]['numOfUnits_IPv6']
+        else:
+            units_ipv6 = 0
+            
+        nameserversStats.write('{}|{}|{}|{}\n'.format(nameserver,
+                                                       len(nameserversDict[nameserver]['domains']),
+                                                        units_ipv4, units_ipv6))
 
 with open(nameserversPickle , 'wb') as f:
     pickle.dump(nameserversDict, f, pickle.HIGHEST_PROTOCOL)

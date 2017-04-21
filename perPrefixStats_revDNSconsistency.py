@@ -34,7 +34,7 @@ DEBUG = False
 
 prefixStats_file = './revDel_perPrefix_stats.csv'
 with open(prefixStats_file, 'wb') as stats:
-    stats.write('Prefix|AllocationDate|IPversion|CC|Opaque_ID|RevDelLatency|RevDelCoveragePercentage|RevDelIssuesPercentage (From total covered)|RevDelWithDNSSECPercentage (From total covered)|hasDomainsWithNoDNScheck (bool)|lastModifiedDate\n')
+    stats.write('Prefix|AllocationDate|IPversion|CC|Opaque_ID|RevDelLatency|RevDelCoveragePercentage|RevDelIssuesPercentage (From total covered)|RevDelWithDNSSECPercentage (From total covered)|hasDomainsWithNoDNScheck (bool)|lastModifiedDate|creationDateMayNotBeAccurate\n')
 
 issuesStats_file = './revDel_issues_stats.csv'
 with open(issuesStats_file, 'wb') as issues:
@@ -256,7 +256,7 @@ for index, alloc_row in delegated_df.iterrows():
     issuesPercentages.append(issuesPercentage)
 
     with open(prefixStats_file, 'a') as stats:
-        stats.write('{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}\n'.format(
+        stats.write('{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}\n'.format(
                                                 prefix,
                                                 alloc_row['allocationDate'],
                                                 alloc_row['ip_version'],
@@ -267,7 +267,8 @@ for index, alloc_row in delegated_df.iterrows():
                                                 issuesPercentage,
                                                 dnssecPercentage,
                                                 hasDomainsWithNoDNScheck,
-                                                lastModified))
+                                                lastModified,
+                                                creationDateMayNotBeAccurate))
                                                 
 
 with open(issuesStats_file, 'a') as issues:

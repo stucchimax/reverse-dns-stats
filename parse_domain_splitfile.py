@@ -1,16 +1,37 @@
 #!/usr/bin/env python
 
 import gzip
+import logging
 import re
+import requests
 import sys
 
+def get_first_version(domain):
+    global s
+    query = 'http://rest.db.ripe.net/ripe/domain/{}/versions.json'.format(domain)
+    try:
+        timestamp = ''
+        response = s.get(query)
+        if response.ok:
+            first_version = response.json()['versions']['version'][0]
+            timestamp = first_version['date']
+            logging.debug('%s', first_version)
+    except Exception as e:
+        logging.debug(e)
+    return timestamp
+
 def csv_output(o):
-    print '{},"{}",{},{},{}'.format(
+    if o['created'] == '1970-01-01T00:00:00Z':
+        timestamp_from_versions = get_first_version(o['domain'])
+        if timestamp_from_versions:
+            o['timestamp-from-versions'] = timestamp_from_versions
+    print '{},"{}",{},{},{},{}'.format(
         o['domain'],
         ' '.join(o['nserver']),
+        '1' if o['ds-rdata'] else '0',
         o['created'],
-        o['last-modified'],
-        '1' if o['ds-rdata'] else '0'
+        o['timestamp-from-versions'],
+        o['last-modified']
         )
 
 def read_splitfile():
@@ -36,7 +57,7 @@ def extract_objects(fh):
         yield parse_buffer(buffer)
 
 def parse_buffer(buffer):
-    o = { 'domain': '', 'nserver': [], 'ds-rdata': [], 'created': '', 'last-modified': '' }
+    o = { 'domain': '', 'nserver': [], 'ds-rdata': [], 'created': '', 'timestamp-from-versions': '', 'last-modified': '' }
     attr, _, value = buffer[0].partition(':')
     value = value.strip()
     o[attr] = value
@@ -58,5 +79,7 @@ def parse_buffer(buffer):
                 o[attr] = value.strip()
     return o
 
-print 'domain,nserver,created,last-modified,ds-rdata'
+logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.DEBUG)
+s = requests.Session()
+print 'domain,nserver,ds-rdata,created,timestamp-from-versions,last-modified'
 read_splitfile()

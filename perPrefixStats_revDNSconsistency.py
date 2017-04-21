@@ -111,8 +111,7 @@ for index, alloc_row in delegated_df.iterrows():
         
     prefix = '{}/{}'.format(alloc_row['network'], prefLen)
 
-    if DEBUG:
-        sys.stderr.write('Starting to work with prefix {}\n'.format(prefix))
+    sys.stderr.write('Starting to work with prefix {}\n'.format(prefix))
                 
     url = '{}/data.json?resource={}'.format(revDNSconsistency_service, prefix)
     r = urllib2.urlopen(url)
@@ -169,8 +168,8 @@ for index, alloc_row in delegated_df.iterrows():
             if len(domain_subset_index_list) == 0:
                 print domain_str
                 continue
-                # As we are just processing those domains that have found = True,
-                # this should never happen
+                # Although we are just processing those domains that have found = True,
+                # this could happen if a domain object was deleted
             else:
                 domain_subset_index = domain_subset_index_list[0]
                 
@@ -309,4 +308,3 @@ with open(lastModAgesPickle , 'wb') as f:
 allocAgesPickle = './allocAges.pkl'
 with open(allocAgesPickle , 'wb') as f:
     pickle.dump(allocationAges, f, pickle.HIGHEST_PROTOCOL)
-

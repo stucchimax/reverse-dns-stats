@@ -4,6 +4,10 @@ Created on Fri Apr 21 09:47:59 2017
 
 @author: sofiasilva
 """
+import os
+os.chdir(os.path.dirname(os.path.realpath(__file__)))
+# Just for DEBUG
+#os.chdir('/Users/sofiasilva/reverse-dns-stats')
 from scipy.stats.stats import pearsonr
 import pickle
 

@@ -3,10 +3,8 @@
 # fetch delegated file
 # fetch split domain file
 
-wget -O delegated-file "ftp://ftp.ripe.net/pub/stats/ripencc/delegated-ripencc-extended-latest"
+wget "ftp://ftp.ripe.net/pub/stats/ripencc/delegated-ripencc-extended-latest"
 wget "ftp://ftp.ripe.net/ripe/dbase/split/ripe.db.domain.gz"
-
-tail -n+5 delegated-file > delegated-ripencc-extended-latest 
 
 # Get stats from delegated file
 
@@ -16,7 +14,4 @@ tail -n+5 delegated-file > delegated-ripencc-extended-latest
 
 ./parse_domain_splitfile.py > domains.csv
 
-rm delegated-file
-rm delegated-ripencc-extended-latest
-rm ripe.db.domain.gz
-
+rm delegated-ripencc-extended-latest ripe.db.domain.gz

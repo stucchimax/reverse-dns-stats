@@ -19,16 +19,23 @@ Created on Thu Apr 20 09:53:42 2017
 https://stat.ripe.net/data/reverse-dns-consistency/data.json?resource=193.0.0.0/21
 https://stat.ripe.net/data/dns-check/data.json?get_results=true&resource=200.193.193.in-addr.arpa
 """
-
+import os, sys
+os.chdir(os.path.dirname(os.path.realpath(__file__)))
+# Just for DEBUG
+#os.chdir('/Users/sofiasilva/reverse-dns-stats')
 import urllib2, json
 from ipaddress import ip_network
 import pandas as pd
 import math
 import pickle
+from datetime import date
+
+
+DEBUG = False
 
 prefixStats_file = './revDel_perPrefix_stats.csv'
 with open(prefixStats_file, 'wb') as stats:
-    stats.write('Prefix|AllocationDate|IPversion|CC|Opaque_ID|RevDelLatency|RevDelCoveragePercentage|RevDelIssuesPercentage (From total covered)|RevDelWithDNSSECPercentage (From total covered)|DNScheck (bool)|lastModifiedDate\n')
+    stats.write('Prefix|AllocationDate|IPversion|CC|Opaque_ID|RevDelLatency|RevDelCoveragePercentage|RevDelIssuesPercentage (From total covered)|RevDelWithDNSSECPercentage (From total covered)|hasDomainsWithNoDNScheck (bool)|lastModifiedDate\n')
 
 issuesStats_file = './revDel_issues_stats.csv'
 with open(issuesStats_file, 'wb') as issues:
@@ -44,11 +51,16 @@ revDNSconsistency_service = 'https://stat.ripe.net/data/reverse-dns-consistency'
 dnsCheck_service = 'https://stat.ripe.net/data/dns-check'
 
 del_file = './delegated_parsed.csv'
-del_columns = ['ip_version', 'network', 'count/prefLength', 'allocationDate', 'CC', 'opaque_id']
+del_columns = ['ip_version',
+               'network',
+               'count/prefLength',
+               'allocationDate',
+               'CC',
+               'opaque_id']
 
 delegated_df = pd.read_csv(
                         del_file,
-                        sep = '|',
+                        sep = ',',
                         header=None,
                         names = del_columns,
                         index_col=False,
@@ -57,8 +69,13 @@ delegated_df = pd.read_csv(
                         comment='#'
                     )
 
-domainDB_file = './domainDB_data.csv'
-domainDB_columns = ['domain', 'nameservers', 'creationDate', 'lastModifiedDate', 'hasDS-Rdata']
+domainDB_file = './domains2.csv'
+domainDB_columns = ['domain',
+                    'nameservers',
+                    'hasDS-Rdata',
+                    'creationDate',
+                    'dateFromVersion',
+                    'lastModifiedDate']
 
 domainDB_df = pd.read_csv(
                     domainDB_file,
@@ -66,14 +83,26 @@ domainDB_df = pd.read_csv(
                     header = 0,
                     names = domainDB_columns,
                     index_col = False,
-                    parse_dates = ['creationDate', 'lastModifiedDate'],
+                    parse_dates = ['creationDate',
+                                   'dateFromVersion',
+                                   'lastModifiedDate'],
                     infer_datetime_format = True,
                     comment = '#')
 
 issuesDict = dict()
 nameserversDict = dict()
+issuesPercentages = []
+allocationAges = []
+creationAges = []
+lastModifiedAges = []
+epoch = date(1970, 1, 1)
+
+
+if DEBUG:
+    delegated_df = delegated_df[delegated_df['count/prefLength'] == 512].head()
                     
 for index, alloc_row in delegated_df.iterrows():
+
     if alloc_row['ip_version'] == 'ipv4':
         prefLen = 32 - int(math.log(alloc_row['count/prefLength'], 2))
         longestPref = 24
@@ -83,6 +112,9 @@ for index, alloc_row in delegated_df.iterrows():
         
     prefix = '{}/{}'.format(alloc_row['network'], prefLen)
 
+    if DEBUG:
+        sys.stderr.write('Starting to work with prefix {}\n'.format(prefix))
+        
     network = ip_network(unicode(prefix, 'utf-8'))
         
     url = '{}/data.json?resource={}'.format(revDNSconsistency_service, prefix)
@@ -96,64 +128,137 @@ for index, alloc_row in delegated_df.iterrows():
     total_units = pow(2, longestPref - network.prefixlen)
     covered_units = 0
     units_with_issues = 0
-    DNScheck = True
+    hasDomainsWithNoDNScheck = False
     dnssec_units = 0
+    domainsLastModifiedDates = []
+    domainsCreationDates = []
+    creationDateMayNotBeAccurate = False
     
     for domain in domains_list:
-        domain_network = ip_network(domain['prefix'])
-        units_covered_by_domain = pow(2, longestPref - domain_network.prefixlen)
-        covered_units += units_covered_by_domain
-        
-        try:    
-            dnscheck_status = domain['dnscheck']['status']
-            if dnscheck_status == 'ERROR':
-                domain_str = domain['domain']
-                units_with_issues += units_covered_by_domain
-                dnsCheck_url = '{}/data.json?get_results=true&resource={}'.format(dnsCheck_service, domain_str)
-                r = urllib2.urlopen(dnsCheck_url)
-                text = r.read()
-                dns_check_obj = json.loads(text)
-                results = dns_check_obj['data']['results']
-                for result in results:
-                    if result['class'] == 'error':
-                        if result['caption'] not in issuesDict:
-                            issuesDict[result['caption']] = 1
-                        else:
-                            issuesDict[result['caption']] += 1
-                
-        except KeyError:
-            DNScheck = False
-            break
-        
-        domain_subset = domainDB_df[domainDB_df['domain'] == domain]
-        
-        revDelLatency = (domain_subset['creationDate'] - alloc_row['allocationDate']).days
-        
-        nameservers_list = domain_subset['nameservers'].split()
-        
-        for nameserver in nameservers_list:
-            if nameserver not in nameserversDict:
-                nameserversDict[nameserver] = dict()
-                nameserversDict[nameserver]['domains'] = [domain]
-                if alloc_row['ip_version'] == 'ipv4':
-                    nameserversDict[nameserver]['numOfUnitsIPv4'] = units_covered_by_domain
-                else:
-                    nameserversDict[nameserver]['numOfUnitsIPv6'] = units_covered_by_domain
-                    
-            else:
-                nameserversDict[nameserver]['domains'].append(domain)
-                if alloc_row['ip_version'] == 'ipv4':
-                    nameserversDict[nameserver]['numOfUnits_IPv4'] += units_covered_by_domain
-                else:
-                    nameserversDict[nameserver]['numOfUnits_IPv6'] += units_covered_by_domain
+        domain_str = domain['domain']
 
+        if DEBUG:
+            sys.stderr.write('    Starting to work with domain {}\n'.format(domain_str))
+            
+        if domain['found']:
+            if DEBUG:
+                sys.stderr.write('    Domain {} found.\n'.format(domain_str))
                 
-        if domain_subset['hasDS-Rdata'] == 1:
-            dnssec_units += units_covered_by_domain
+            domain_network = ip_network(domain['prefix'])
+            units_covered_by_domain = pow(2, longestPref - domain_network.prefixlen)
+            covered_units += units_covered_by_domain
+            
+            dnscheck = domain['dnscheck']
+            if dnscheck is not None:
+                dnscheck_status = dnscheck['status']
+            
+                if dnscheck_status == 'ERROR':
+                    units_with_issues += units_covered_by_domain
+                    dnsCheck_url = '{}/data.json?get_results=true&resource={}'.format(dnsCheck_service, domain_str)
+                    r = urllib2.urlopen(dnsCheck_url)
+                    text = r.read()
+                    dns_check_obj = json.loads(text)
+                    results = dns_check_obj['data']['results']
+                    for result in results:
+                        if result['class'] == 'error':
+                            if result['caption'] not in issuesDict:
+                                issuesDict[result['caption']] = 1
+                            else:
+                                issuesDict[result['caption']] += 1
+            else:
+                hasDomainsWithNoDNScheck = True
+        
+            domain_subset_index_list = domainDB_df[domainDB_df['domain'] == domain_str].index
+            
+            if len(domain_subset_index_list) == 0:
+                print domain_str
+                continue
+                # As we are just processing those domains that have found = True,
+                # this should never happen
+            else:
+                domain_subset_index = domain_subset_index_list[0]
+                
+            domain_row = domainDB_df.ix[domain_subset_index]
+            
+            domainsLastModifiedDates.append(domain_row['lastModifiedDate'].date())
+            
+            domainCreation = domain_row['creationDate'].date()
+
+            dateFromVersion = domain_row['dateFromVersion']
+            
+            if domainCreation == epoch:
+                if not dateFromVersion.isnull():
+                    domainCreation = dateFromVersion.date()
+                else:
+                    domainCreation = domain_row['lastModifiedDate'].date()
+                creationDateMayNotBeAccurate = True
+                
+            domainsCreationDates.append(domainCreation)
+            
+            nameservers_list = domain_row['nameservers'].split()
+            
+            for nameserver in nameservers_list:
+                if nameserver not in nameserversDict:
+                    nameserversDict[nameserver] = dict()
+                    nameserversDict[nameserver]['domains'] = [domain]
+                    if alloc_row['ip_version'] == 'ipv4':
+                        nameserversDict[nameserver]['numOfUnits_IPv4'] = units_covered_by_domain
+                    else:
+                        nameserversDict[nameserver]['numOfUnits_IPv6'] = units_covered_by_domain
+                        
+                else:
+                    nameserversDict[nameserver]['domains'].append(domain)
+                    if alloc_row['ip_version'] == 'ipv4':
+                        nameserversDict[nameserver]['numOfUnits_IPv4'] += units_covered_by_domain
+                    else:
+                        nameserversDict[nameserver]['numOfUnits_IPv6'] += units_covered_by_domain
     
-    coveragePercentage = 100*float(covered_units)/total_units
-    issuesPercentage = 100*float(units_with_issues)/covered_units
-    dnssecPercentage = 100*float(dnssec_units)/covered_units
+                    
+            if domain_row['hasDS-Rdata'] == 1:
+                dnssec_units += units_covered_by_domain
+                
+        elif DEBUG:
+            sys.stderr.write('    Domain {} not found.\n'.format(domain_str))
+        
+        allocDate = alloc_row['allocationDate'].date()
+        allocationAges.append((allocDate-epoch).days)
+
+        if len(domainsCreationDates) > 0:
+            domainCreation = min(domainsCreationDates)
+        else:
+            domainCreation = epoch
+            
+        creationAges.append((domainCreation-epoch).days)
+        
+        revDelLatency = (domainCreation - allocDate).days
+
+        if len(domainsLastModifiedDates) > 0:
+            lastModified = max(domainsLastModifiedDates)
+        else:
+            lastModified = epoch
+            
+        lastModifiedAges.append((lastModified-epoch).days)
+    
+    if total_units != 0:
+        coveragePercentage = 100*float(covered_units)/total_units
+    else:
+        coveragePercentage = -1
+        
+    if covered_units != 0:
+        issuesPercentage = 100*float(units_with_issues)/covered_units
+        dnssecPercentage = 100*float(dnssec_units)/covered_units
+    else:
+        if units_with_issues == 0:
+            issuesPercentage = 0
+        else:
+            issuesPercentage = -1
+            
+        if dnssec_units == 0:
+            dnssecPercentage = 0
+        else:
+            dnssecPercentage = -1
+    
+    issuesPercentages.append(issuesPercentage)
 
     with open(prefixStats_file, 'a') as stats:
         stats.write('{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}\n'.format(
@@ -166,8 +271,9 @@ for index, alloc_row in delegated_df.iterrows():
                                                 coveragePercentage,
                                                 issuesPercentage,
                                                 dnssecPercentage,
-                                                DNScheck,
-                                                domain_subset['lastModifiedDate']))
+                                                hasDomainsWithNoDNScheck,
+                                                lastModified))
+                                                
 
 with open(issuesStats_file, 'a') as issues:
     for issue_type in issuesDict:
@@ -179,3 +285,20 @@ with open(nameserversStats_file, 'a') as nameserversStats:
 
 with open(nameserversPickle , 'wb') as f:
     pickle.dump(nameserversDict, f, pickle.HIGHEST_PROTOCOL)
+
+issuesPercentagesPickle = './issuesPercentages.pkl'
+with open(issuesPercentagesPickle, 'wb') as f:
+    pickle.dump(issuesPercentages, f, pickle.HIGHEST_PROTOCOL)
+
+creationAgesPickle = './creationAges.pkl'
+with open(creationAgesPickle, 'wb') as f:
+    pickle.dump(creationAges, f, pickle.HIGHEST_PROTOCOL)
+
+lastModAgesPickle = './lastModAges.pkl'
+with open(lastModAgesPickle , 'wb') as f:
+    pickle.dump(lastModifiedAges, f, pickle.HIGHEST_PROTOCOL)
+
+allocAgesPickle = './allocAges.pkl'
+with open(allocAgesPickle , 'wb') as f:
+    pickle.dump(allocationAges, f, pickle.HIGHEST_PROTOCOL)
+

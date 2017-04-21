@@ -24,7 +24,6 @@ os.chdir(os.path.dirname(os.path.realpath(__file__)))
 # Just for DEBUG
 #os.chdir('/Users/sofiasilva/reverse-dns-stats')
 import urllib2, json
-from ipaddress import ip_network
 import pandas as pd
 import math
 import pickle
@@ -114,9 +113,7 @@ for index, alloc_row in delegated_df.iterrows():
 
     if DEBUG:
         sys.stderr.write('Starting to work with prefix {}\n'.format(prefix))
-        
-    network = ip_network(unicode(prefix, 'utf-8'))
-        
+                
     url = '{}/data.json?resource={}'.format(revDNSconsistency_service, prefix)
     r = urllib2.urlopen(url)
     text = r.read()
@@ -125,7 +122,7 @@ for index, alloc_row in delegated_df.iterrows():
     domains_list = pref_dns_obj['data']['prefixes'][alloc_row['ip_version']][prefix]['domains']
     
     # For IPv4 a unit is a /24 prefix. For IPv6 a unit is a /64 prefix.
-    total_units = pow(2, longestPref - network.prefixlen)
+    total_units = pow(2, longestPref - prefLen)
     covered_units = 0
     units_with_issues = 0
     hasDomainsWithNoDNScheck = False
@@ -143,9 +140,8 @@ for index, alloc_row in delegated_df.iterrows():
         if domain['found']:
             if DEBUG:
                 sys.stderr.write('    Domain {} found.\n'.format(domain_str))
-                
-            domain_network = ip_network(domain['prefix'])
-            units_covered_by_domain = pow(2, longestPref - domain_network.prefixlen)
+            
+            units_covered_by_domain = pow(2, longestPref - domain['prefix'].split('/')[1])
             covered_units += units_covered_by_domain
             
             dnscheck = domain['dnscheck']

@@ -98,8 +98,13 @@ epoch = date(1970, 1, 1)
 
 
 if DEBUG:
-    delegated_df = delegated_df[(delegated_df['count/prefLength'] == 512) | (delegated_df['count/prefLength'] == 1024)].head(10)
-                    
+    delegated_df = delegated_df[(delegated_df['count/prefLength'] == 512) | (delegated_df['count/prefLength'] == 1024)].head(100)
+       
+# TODO Performance can be enhanced using net_addr to get a dictionary indexed by
+# allocated prefixes containing the list of domains present in the domain DB
+# for each prefix. After having this, we can iterate only over the prefixes that
+# have related domains in the domain DB and over the domains of a prefix for
+# which domain objects exist in the DB.
 for index, alloc_row in delegated_df.iterrows():
 
     if alloc_row['ip_version'] == 'ipv4':
@@ -182,7 +187,7 @@ for index, alloc_row in delegated_df.iterrows():
             dateFromVersion = domain_row['dateFromVersion']
             
             if domainCreation == epoch:
-                if not dateFromVersion.isnull():
+                if not pd.isnull(dateFromVersion):
                     domainCreation = dateFromVersion.date()
                 else:
                     domainCreation = domain_row['lastModifiedDate'].date()

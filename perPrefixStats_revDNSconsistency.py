@@ -28,9 +28,10 @@ import pandas as pd
 import math
 import pickle
 from datetime import date
+from netaddr import IPRange
 
 
-DEBUG = False
+DEBUG = True
 
 prefixStats_file = './revDel_perPrefix_stats.csv'
 with open(prefixStats_file, 'wb') as stats:
@@ -98,7 +99,8 @@ epoch = date(1970, 1, 1)
 
 
 if DEBUG:
-    delegated_df = delegated_df[(delegated_df['count/prefLength'] == 512) | (delegated_df['count/prefLength'] == 1024)].head(100)
+#    delegated_df = delegated_df[(delegated_df['count/prefLength'] == 512) | (delegated_df['count/prefLength'] == 1024)].head(100)
+    delegated_df = delegated_df[delegated_df['network']=='46.236.192.0']
        
 # TODO Performance can be enhanced using net_addr to get a dictionary indexed by
 # allocated prefixes containing the list of domains present in the domain DB
@@ -145,7 +147,23 @@ for index, alloc_row in delegated_df.iterrows():
             if DEBUG:
                 sys.stderr.write('    Domain {} found.\n'.format(domain_str))
             
-            units_covered_by_domain = pow(2, longestPref - int(domain['prefix'].split('/')[1]))
+            prefix_field = domain['prefix']
+            
+            if '-' in prefix_field:
+                domain_ipRange = IPRange(prefix_field.split('-')[0],
+                                          prefix_field.split('-')[1])
+                                          
+                units_covered_by_domain = 0
+                for subpref in domain_ipRange.cidrs():
+                    units_covered_by_domain += pow(2, longestPref - subpref.prefixlen)
+                
+            elif '/' in prefix_field:
+                domain_prefLength = int(domain['prefix'].split('/')[1])                
+                units_covered_by_domain = pow(2, longestPref - domain_prefLength)
+            else:
+                sys.stderr.write('Wrong prefix format: {}\n'.format(prefix_field))
+                sys.exit()
+
             covered_units += units_covered_by_domain
             
             dnscheck = domain['dnscheck']

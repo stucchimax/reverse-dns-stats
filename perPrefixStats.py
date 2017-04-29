@@ -88,10 +88,7 @@ delegated_df = pd.read_csv(
                     )
                     
 if DEBUG:
-    delegated_df = delegated_df.head().append(delegated_df[delegated_df['network'] == '195.24.32.0'])
-#    delegated_df = delegated_df[(delegated_df['count/prefLength'] == 512) | (delegated_df['count/prefLength'] == 1024)].head(100)
-    delegated_df = delegated_df.reset_index()
-    del delegated_df['index']
+    delegated_df = delegated_df[delegated_df['ip_version'] == 'ipv6'].head(10)
 
 domainDB_file = './domains2.csv'
 domainDB_columns = ['domain',
@@ -113,10 +110,10 @@ domainDB_df = pd.read_csv(
                     infer_datetime_format = True,
                     comment = '#')
                     
-if DEBUG:
-    domainDB_df = domainDB_df.head(10)
-    domainDB_df = domainDB_df.reset_index()
-    del domainDB_df['index']
+#if DEBUG:
+#    domainDB_df = domainDB_df.head(10)
+#    domainDB_df = domainDB_df.reset_index()
+#    del domainDB_df['index']
 
 issuesDict = dict()
 nameserversDict = dict()
@@ -210,7 +207,7 @@ prefixes_withDomains = delegated_IPSet -\
 for index, alloc_row in delegated_df.iterrows():
     prefix = alloc_row['prefix']
     
-    if len(IPSet([prefix]).intersection(prefixes_withDomains)) > 0:
+    if len(IPSet([prefix]).intersection(prefixes_withDomains).iter_cidrs()) > 0:
         if alloc_row['ip_version'] == 'ipv4':
             longestPref = 24
         else:

@@ -27,7 +27,7 @@ import urllib2, json
 import pandas as pd
 import pickle
 from datetime import date
-from netaddr import IPRange, IPSet
+from netaddr import IPRange, IPSet, IPNetwork
 from numpy import log2
 import re
 
@@ -47,7 +47,7 @@ def convertIPv6RevDomainToNetwork(domain):
     else:
         network = '{}/{}'.format(prefix, prefLength)
         
-    return network
+    return str(IPNetwork(network))
     
 DEBUG = False
 
@@ -134,6 +134,7 @@ delegated_IPSet = IPSet(delegated_df['prefix'].tolist())
 # Now we obtain the set of IP prefixes for which there are domain objects in the database
 # For IPv4 we replace 'in-addr.arpa' by 'inaddr.arpa' so that we can
 # filter those domains that are expressed as a range (contain '-').
+
 ipv4_domains_Series = domainDB_df[domainDB_df['domain'].str.contains('in-addr.arpa')]['domain']
 ipv4_domains_Series = ipv4_domains_Series.str.replace('in-addr.arpa', 'inaddr.arpa')
 

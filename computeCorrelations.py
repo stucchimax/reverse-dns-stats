@@ -21,6 +21,8 @@ creationAges = pickle.load(open(creationAgesPickle, "rb"))
 lastModifiedAges = pickle.load(open(lastModAgesPickle, "rb"))
 allocationAges = pickle.load(open(allocAgesPickle, "rb"))
 
+correlations_file = './correlations.csv'
+
 corr_creationAge, p_value_creationAge = pearsonr(issuesPercentages, creationAges)
 print 'Correlation between percentage of reverse delegations with issues and the creation date: Correlation coefficient: {}; p-value: {}'.format(corr_creationAge, p_value_creationAge)
 
@@ -29,3 +31,9 @@ print 'Correlation between percentage of reverse delegations with issues and the
 
 corr_allocAge, p_value_allocAge = pearsonr(issuesPercentages, allocationAges)
 print 'Correlation between percentage of reverse delegations with issues and the date of allocation: Correlation coefficient: {}; p-value: {}'.format(corr_allocAge, p_value_allocAge)
+
+with open(correlations_file, 'wb') as c_file:
+    c_file.write('Variables|Corr_Coef|p_value\n')
+    c_file.write('issuesPercentageAndCreationDate|{}|{}\n'.format(corr_creationAge, p_value_creationAge))
+    c_file.write('issuesPercentageAndLastModifiedDate|{}|{}\n'.format(corr_lastModAge, p_value_lastModAge))
+    c_file.write('issuesPercentageAndAllocDate|{}|{}\n'.format(corr_allocAge, p_value_allocAge))

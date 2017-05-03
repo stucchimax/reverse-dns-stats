@@ -90,7 +90,7 @@ delegated_df = pd.read_csv(
 if DEBUG:
     delegated_df = delegated_df[delegated_df['ip_version'] == 'ipv6'].head(10)
 
-domainDB_file = './domains2.csv'
+domainDB_file = './domains.csv'
 domainDB_columns = ['domain',
                     'nameservers',
                     'hasDS-Rdata',

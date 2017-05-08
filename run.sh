@@ -3,8 +3,8 @@
 # fetch delegated file
 # fetch split domain file
 
-wget "ftp://ftp.ripe.net/pub/stats/ripencc/delegated-ripencc-extended-latest"
-wget "ftp://ftp.ripe.net/ripe/dbase/split/ripe.db.domain.gz"
+wget -q "ftp://ftp.ripe.net/pub/stats/ripencc/delegated-ripencc-extended-latest"
+wget -q "ftp://ftp.ripe.net/ripe/dbase/split/ripe.db.domain.gz"
 
 # Get stats from delegated file
 
@@ -17,8 +17,6 @@ wget "ftp://ftp.ripe.net/ripe/dbase/split/ripe.db.domain.gz"
 rm delegated-ripencc-extended-latest ripe.db.domain.gz
 
 ./perPrefixStats.py
-
-./perPrefixStats_revDNSconsistency.py
 
 ./computeCorrelations.py
 

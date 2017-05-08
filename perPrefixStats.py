@@ -19,17 +19,22 @@ Created on Thu Apr 20 09:53:42 2017
 https://stat.ripe.net/data/reverse-dns-consistency/data.json?resource=193.0.0.0/21
 https://stat.ripe.net/data/dns-check/data.json?get_results=true&resource=200.193.193.in-addr.arpa
 """
-import os, sys
+import os
 os.chdir(os.path.dirname(os.path.realpath(__file__)))
 # Just for DEBUG
 #os.chdir('/Users/sofiasilva/reverse-dns-stats')
-import urllib2, json
+#import urllib2, json
+#import sys
 import pandas as pd
 import pickle
 from datetime import date
 from netaddr import IPRange, IPSet, IPNetwork
 from numpy import log2
 import re
+import requests
+import logging
+
+logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.DEBUG)
 
 def convertIPv6RevDomainToNetwork(domain):
     domain = domain.replace('.ip6.arpa', '')
@@ -199,6 +204,8 @@ prefixes_withDomains = delegated_IPSet -\
                         IPSet(list(set((delegated_IPSet - domains_IPSet).iter_cidrs()).\
                         intersection(set(delegated_IPSet.iter_cidrs()))))
 
+s = requests.Session()
+
 # TODO Get creation date for prefixes that don't currently have domains in
 # the DB but could have had domains in the past and compute revDelLatency
 # The rest of the stats are 0 or NA
@@ -214,18 +221,30 @@ for index, alloc_row in delegated_df.iterrows():
         else:
             longestPref = 64
         
-        sys.stderr.write('Starting to work with prefix {}\n'.format(prefix))
+        logging.debug('Starting to work with prefix {}\n'.format(prefix))
         
         prefixesInDomainsDB = [str(pref) for pref in IPSet([prefix]).intersection(domains_IPSet).iter_cidrs()]
         domainsForPrefix = domains_df[domains_df['prefix'].isin(prefixesInDomainsDB)]['domain'].astype(str).tolist()
         
         url = '{}/data.json?resource={}'.format(revDNSconsistency_service, prefix)
-        r = urllib2.urlopen(url)
-        text = r.read()
-        pref_dns_obj = json.loads(text)
+#        r = urllib2.urlopen(url)
+#        text = r.read()
+#        pref_dns_obj = json.loads(text)
         
-        domains_list = pref_dns_obj['data']['prefixes'][alloc_row['ip_version']][prefix]['domains']
-        filtered_domains_list = [domain for domain in domains_list if domain['domain'] in domainsForPrefix]
+        filtered_domains_list = []
+        
+        try:
+            response = s.get(url)
+
+            if response.ok:
+                domains_list = response.json()['data']['prefixes'][alloc_row['ip_version']][prefix]['domains']
+                filtered_domains_list = [domain for domain in domains_list if domain['domain'] in domainsForPrefix]
+
+        except Exception as e:
+            logging.debug(e)
+        
+#        domains_list = pref_dns_obj['data']['prefixes'][alloc_row['ip_version']][prefix]['domains']
+#        filtered_domains_list = [domain for domain in domains_list if domain['domain'] in domainsForPrefix]
     
         # For IPv4 a unit is a /24 prefix. For IPv6 a unit is a /64 prefix.
         total_units = pow(2, longestPref - int(alloc_row['prefLength']))
@@ -241,11 +260,11 @@ for index, alloc_row in delegated_df.iterrows():
             domain_str = domain['domain']
     
             if DEBUG:
-                sys.stderr.write('    Starting to work with domain {}\n'.format(domain_str))
+                logging.debug('    Starting to work with domain {}\n'.format(domain_str))
                 
             if domain['found']:
                 if DEBUG:
-                    sys.stderr.write('    Domain {} found.\n'.format(domain_str))
+                    logging.debug('    Domain {} found.\n'.format(domain_str))
                 
                 prefixesForDomain = domains_df[domains_df['domain'] == domain_str]['prefix'].tolist()
                 
@@ -262,10 +281,13 @@ for index, alloc_row in delegated_df.iterrows():
                     if dnscheck_status == 'ERROR':
                         units_with_issues += units_covered_by_domain
                         dnsCheck_url = '{}/data.json?get_results=true&resource={}'.format(dnsCheck_service, domain_str)
-                        r = urllib2.urlopen(dnsCheck_url)
-                        text = r.read()
-                        dns_check_obj = json.loads(text)
-                        results = dns_check_obj['data']['results']    
+#                        r = urllib2.urlopen(dnsCheck_url)
+#                        text = r.read()
+#                        dns_check_obj = json.loads(text)
+#                        results = dns_check_obj['data']['results']
+                        response = s.get(dnsCheck_url)
+                        results = response.json()['data']['results']
+                        
                         for result in results:
                             if result['class'] == 'error':
                                 if result['caption'] not in issuesDict:
@@ -325,7 +347,7 @@ for index, alloc_row in delegated_df.iterrows():
                     dnssec_units += units_covered_by_domain
                     
             elif DEBUG:
-                sys.stderr.write('    Domain {} not found.\n'.format(domain_str))
+                logging.debug('    Domain {} not found.\n'.format(domain_str))
             
         allocDate = alloc_row['allocationDate'].date()
         allocationAges.append((allocDate-epoch).days)

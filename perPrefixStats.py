@@ -30,7 +30,7 @@ import pandas as pd
 import pickle
 from datetime import date
 from netaddr import IPRange, IPSet, IPNetwork
-from numpy import log2
+from numpy import log2, isnan
 import re
 import requests
 import logging
@@ -94,7 +94,8 @@ delegated_df = pd.read_csv(
                     )
                     
 if DEBUG:
-    delegated_df = delegated_df[delegated_df['ip_version'] == 'ipv6'].head(10)
+#    delegated_df = delegated_df[delegated_df['ip_version'] == 'ipv6'].head(10)
+    delegated_df = delegated_df[delegated_df['network'] == '137.223.0.0']
 
 domainDB_file = './domains.csv'
 domainDB_columns = ['domain',
@@ -116,7 +117,8 @@ domainDB_df = pd.read_csv(
                     infer_datetime_format = True,
                     comment = '#')
                     
-#if DEBUG:
+if DEBUG:
+    domainDB_df = domainDB_df[domainDB_df['domain'] == '223.137.in-addr.arpa']
 #    domainDB_df = domainDB_df.head(10)
 #    domainDB_df = domainDB_df.reset_index()
 #    del domainDB_df['index']
@@ -131,7 +133,7 @@ epoch = date(1970, 1, 1)
 
 # We obtain the set of IP prefixes that have been allocated by RIPE NCC
 delegated_df['prefLength'] = delegated_df['count/prefLength']
-delegated_df.loc[delegated_df['ip_version'] == 'ipv4', 'prefLength'] = pd.Series(32-log2(delegated_df['count/prefLength'].tolist())).astype(int)
+delegated_df.loc[delegated_df['ip_version'] == 'ipv4', 'prefLength'] = pd.Series(32-log2(delegated_df['count/prefLength'].tolist()), index=delegated_df[delegated_df['ip_version'] == 'ipv4'].index).astype(int)
 delegated_df['prefLength'] = delegated_df['prefLength'].astype(str)
 
 delegated_df['prefix'] = delegated_df[['network', 'prefLength']].apply(lambda x: '/'.join(x), axis=1)
@@ -287,7 +289,11 @@ for index, alloc_row in delegated_df.iterrows():
 #                        dns_check_obj = json.loads(text)
 #                        results = dns_check_obj['data']['results']
                         response = s.get(dnsCheck_url)
-                        results = response.json()['data']['results']
+                        
+                        if response.ok:
+                            results = response.json()['data']['results']
+                        else:
+                            results = []
                         
                         for result in results:
                             if result['class'] == 'error':
@@ -325,7 +331,10 @@ for index, alloc_row in delegated_df.iterrows():
                     
                 domainsCreationDates.append(domainCreation)
                 
-                nameservers_list = domain_row['nameservers'].split()
+                if not isnan(domain_row['nameservers']):
+                    nameservers_list = domain_row['nameservers'].split()
+                else:
+                    nameservers_list = []
                 
                 for nameserver in nameservers_list:
                     if nameserver not in nameserversDict:

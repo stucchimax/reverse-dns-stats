@@ -32,7 +32,7 @@ from datetime import date
 from netaddr import IPRange, IPSet, IPNetwork
 from numpy import log2, isnan
 import re
-import requests
+from requests import Session
 import logging
 
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.DEBUG)
@@ -94,8 +94,7 @@ delegated_df = pd.read_csv(
                     )
                     
 if DEBUG:
-#    delegated_df = delegated_df[delegated_df['ip_version'] == 'ipv6'].head(10)
-    delegated_df = delegated_df[delegated_df['network'] == '137.223.0.0']
+    delegated_df = delegated_df[delegated_df['ip_version'] == 'ipv6'].head(10)
 
 domainDB_file = './domains.csv'
 domainDB_columns = ['domain',
@@ -118,10 +117,9 @@ domainDB_df = pd.read_csv(
                     comment = '#')
                     
 if DEBUG:
-    domainDB_df = domainDB_df[domainDB_df['domain'] == '223.137.in-addr.arpa']
-#    domainDB_df = domainDB_df.head(10)
-#    domainDB_df = domainDB_df.reset_index()
-#    del domainDB_df['index']
+    domainDB_df = domainDB_df.head(10)
+    domainDB_df = domainDB_df.reset_index()
+    del domainDB_df['index']
 
 issuesDict = dict()
 nameserversDict = dict()
@@ -133,7 +131,7 @@ epoch = date(1970, 1, 1)
 
 # We obtain the set of IP prefixes that have been allocated by RIPE NCC
 delegated_df['prefLength'] = delegated_df['count/prefLength']
-delegated_df.loc[delegated_df['ip_version'] == 'ipv4', 'prefLength'] = pd.Series(32-log2(delegated_df['count/prefLength'].tolist()), index=delegated_df[delegated_df['ip_version'] == 'ipv4'].index).astype(int)
+delegated_df.loc[delegated_df['ip_version'] == 'ipv4', 'prefLength'] = pd.Series(32-log2(delegated_df.loc[delegated_df['ip_version'] == 'ipv4', 'count/prefLength'].tolist())).astype(int)
 delegated_df['prefLength'] = delegated_df['prefLength'].astype(str)
 
 delegated_df['prefix'] = delegated_df[['network', 'prefLength']].apply(lambda x: '/'.join(x), axis=1)
@@ -154,6 +152,7 @@ ipv4_domains_CIDRSubset['domain'] = ipv4_domains_CIDRSubset_Series.copy()
 ipv4_domains_CIDRSubset_Series.replace(to_replace=r'^(\d*)\.(\d*)\.(\d*)\.(\d*)\.inaddr\.arpa', value=r'\4.\3.\2.\1/32', regex=True, inplace=True)
 ipv4_domains_CIDRSubset_Series.replace(to_replace=r'^(\d*)\.(\d*)\.(\d*)\.inaddr\.arpa', value=r'\3.\2.\1.0/24', regex=True, inplace=True)
 ipv4_domains_CIDRSubset_Series.replace(to_replace=r'^(\d*)\.(\d*)\.inaddr\.arpa', value=r'\2.\1.0.0/16', regex=True, inplace=True)
+ipv4_domains_CIDRSubset_Series.replace(to_replace=r'^(\d*)\.inaddr\.arpa', value=r'\1.0.0.0/8', regex=True, inplace=True)
 
 ipv4_domains_CIDRSubset['prefix'] = ipv4_domains_CIDRSubset_Series
 
@@ -207,11 +206,9 @@ prefixes_withDomains = delegated_IPSet -\
                         IPSet(list(set((delegated_IPSet - domains_IPSet).iter_cidrs()).\
                         intersection(set(delegated_IPSet.iter_cidrs()))))
 
-s = requests.Session()
+prefixes_withoutDomains = delegated_IPSet - prefixes_withDomains
 
-# TODO Get creation date for prefixes that don't currently have domains in
-# the DB but could have had domains in the past and compute revDelLatency
-# The rest of the stats are 0 or NA
+s = Session()
 
 # We compute statistics for those prefixes that have associated domains in
 # the domain DB.
@@ -230,9 +227,6 @@ for index, alloc_row in delegated_df.iterrows():
         domainsForPrefix = domains_df[domains_df['prefix'].isin(prefixesInDomainsDB)]['domain'].astype(str).tolist()
         
         url = '{}/data.json?resource={}'.format(revDNSconsistency_service, prefix)
-#        r = urllib2.urlopen(url)
-#        text = r.read()
-#        pref_dns_obj = json.loads(text)
         
         filtered_domains_list = []
         
@@ -245,10 +239,7 @@ for index, alloc_row in delegated_df.iterrows():
 
         except Exception as e:
             logging.debug(e)
-        
-#        domains_list = pref_dns_obj['data']['prefixes'][alloc_row['ip_version']][prefix]['domains']
-#        filtered_domains_list = [domain for domain in domains_list if domain['domain'] in domainsForPrefix]
-    
+   
         # For IPv4 a unit is a /24 prefix. For IPv6 a unit is a /64 prefix.
         total_units = pow(2, longestPref - int(alloc_row['prefLength']))
         covered_units = 0
@@ -453,3 +444,17 @@ with open(lastModAgesPickle , 'wb') as f:
 allocAgesPickle = './allocAges.pkl'
 with open(allocAgesPickle , 'wb') as f:
     pickle.dump(allocationAges, f, pickle.HIGHEST_PROTOCOL)
+
+prefixes_woDomains_file = './prefixes_woDomains.txt'
+with open(prefixes_woDomains_file, 'wb') as f:
+    for pref in prefixes_withoutDomains.iter_cidrs():
+        f.write('{}\n'.format(pref))
+
+# Just for DEBUG
+print 'Delegated IPSet length: {}'.format(len(delegated_IPSet.iter_cidrs()))
+print 'Prefixes with domains length: {}'.format(len(prefixes_withDomains.iter_cidrs()))
+print 'Prefixes without domains length: {}'.format(len(prefixes_withoutDomains.iter_cidrs()))
+
+# TODO Get creation date for prefixes that don't currently have domains in
+# the DB but could have had domains in the past and compute revDelLatency
+# The rest of the stats are 0 or NA

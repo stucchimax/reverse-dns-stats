@@ -29,7 +29,7 @@ os.chdir(os.path.dirname(os.path.realpath(__file__)))
 import pandas as pd
 import pickle
 from datetime import date
-from netaddr import IPRange, IPSet, IPNetwork
+from netaddr import IPRange, IPSet, IPNetwork, IPAddress
 from math import log
 import re
 from requests import Session
@@ -451,10 +451,13 @@ allocAgesPickle = './allocAges.pkl'
 with open(allocAgesPickle , 'wb') as f:
     pickle.dump(allocationAges, f, pickle.HIGHEST_PROTOCOL)
 
+# Write prefixes that do not have domain objects in the DB to a file
 prefixes_woDomains_file = './prefixes_woDomains.txt'
 with open(prefixes_woDomains_file, 'wb') as f:
-    for pref in prefixes_withoutDomains.iter_cidrs():
-        f.write('{}\n'.format(str(pref)))
+    for index, row in delegated_df.iterrows():
+        network_ip = row['network']
+        if IPAddress(network_ip) in prefixes_withoutDomains:
+            f.write('{}/{}\n'.format(network_ip, row['prefLength']))
 
 # Just for DEBUG
 print 'Delegated IPSet length: {}'.format(len(delegated_IPSet.iter_cidrs()))

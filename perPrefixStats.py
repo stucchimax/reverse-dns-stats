@@ -30,7 +30,7 @@ import pandas as pd
 import pickle
 from datetime import date
 from netaddr import IPRange, IPSet, IPNetwork
-from numpy import log2, isnan
+from math import log
 import re
 from requests import Session
 import logging
@@ -54,6 +54,9 @@ def convertIPv6RevDomainToNetwork(domain):
         network = '{}/{}'.format(prefix, prefLength)
         
     return str(IPNetwork(network))
+    
+def getIPv4PrefLengthFromCount(count):
+    return int(32 - log(count, 2))
     
 DEBUG = False
 
@@ -94,7 +97,11 @@ delegated_df = pd.read_csv(
                     )
                     
 if DEBUG:
-    delegated_df = delegated_df[delegated_df['ip_version'] == 'ipv6'].head(10)
+    delegated_df = pd.concat([delegated_df[delegated_df['network'] == '137.223.0.0'],
+                              delegated_df[delegated_df['ip_version'] == 'ipv6'].head(10),
+                              delegated_df[delegated_df['ip_version'] == 'ipv4'].head(10)])
+    delegated_df = delegated_df.reset_index()
+    del delegated_df['index']
 
 domainDB_file = './domains.csv'
 domainDB_columns = ['domain',
@@ -117,7 +124,7 @@ domainDB_df = pd.read_csv(
                     comment = '#')
                     
 if DEBUG:
-    domainDB_df = domainDB_df.head(10)
+    domainDB_df = pd.concat([domainDB_df.head(), domainDB_df[domainDB_df['domain'] == '223.137.in-addr.arpa']])
     domainDB_df = domainDB_df.reset_index()
     del domainDB_df['index']
 
@@ -131,7 +138,7 @@ epoch = date(1970, 1, 1)
 
 # We obtain the set of IP prefixes that have been allocated by RIPE NCC
 delegated_df['prefLength'] = delegated_df['count/prefLength']
-delegated_df.loc[delegated_df['ip_version'] == 'ipv4', 'prefLength'] = pd.Series(32-log2(delegated_df.loc[delegated_df['ip_version'] == 'ipv4', 'count/prefLength'].tolist())).astype(int)
+delegated_df.loc[delegated_df['ip_version'] == 'ipv4', 'prefLength'] = delegated_df['count/prefLength'].apply(getIPv4PrefLengthFromCount)
 delegated_df['prefLength'] = delegated_df['prefLength'].astype(str)
 
 delegated_df['prefix'] = delegated_df[['network', 'prefLength']].apply(lambda x: '/'.join(x), axis=1)
@@ -202,11 +209,10 @@ ipv6_prefixes_list = ipv6_domains['prefix'].tolist()
 domains_IPSet = domains_IPSet.union(IPSet(ipv6_prefixes_list))
 domains_df = pd.concat([ipv4_domains, ipv6_domains])
 
-prefixes_withDomains = delegated_IPSet -\
-                        IPSet(list(set((delegated_IPSet - domains_IPSet).iter_cidrs()).\
-                        intersection(set(delegated_IPSet.iter_cidrs()))))
+prefixes_withoutDomains = IPSet(list(set((delegated_IPSet - domains_IPSet).iter_cidrs()).\
+                                    intersection(set(delegated_IPSet.iter_cidrs()))))
 
-prefixes_withoutDomains = delegated_IPSet - prefixes_withDomains
+prefixes_withDomains = delegated_IPSet - prefixes_withoutDomains
 
 s = Session()
 
@@ -322,9 +328,9 @@ for index, alloc_row in delegated_df.iterrows():
                     
                 domainsCreationDates.append(domainCreation)
                 
-                if not isnan(domain_row['nameservers']):
+                try:
                     nameservers_list = domain_row['nameservers'].split()
-                else:
+                except AttributeError:
                     nameservers_list = []
                 
                 for nameserver in nameservers_list:
@@ -448,7 +454,7 @@ with open(allocAgesPickle , 'wb') as f:
 prefixes_woDomains_file = './prefixes_woDomains.txt'
 with open(prefixes_woDomains_file, 'wb') as f:
     for pref in prefixes_withoutDomains.iter_cidrs():
-        f.write('{}\n'.format(pref))
+        f.write('{}\n'.format(str(pref)))
 
 # Just for DEBUG
 print 'Delegated IPSet length: {}'.format(len(delegated_IPSet.iter_cidrs()))

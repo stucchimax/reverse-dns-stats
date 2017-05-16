@@ -59,7 +59,12 @@ def convertIPv6RevDomainToNetwork(domain):
     
 def getIPv4PrefLengthFromCount(count):
     return int(32 - log(count, 2))
-
+    
+nonCIDR_file = './nonCIDRs.txt' 
+with open(nonCIDR_file, 'w') as nonCIDR:
+    nonCIDR.write('# Non-CIDR prefixes present in the delegated file.\n')
+    nonCIDR.write('network|count\n')
+    
 prefixStats_file = './revDel_perPrefix_stats.csv'
 with open(prefixStats_file, 'wb') as stats:
     stats.write('Prefix|AllocationDate|IPversion|CC|Opaque_ID|RevDelLatency|RevDelCoveragePercentage|RevDelIssuesPercentage (From total covered)|RevDelWithDNSSECPercentage (From total covered)|hasDomainsWithNoDNScheck (bool)|lastModifiedDate|creationDateMayNotBeAccurate\n')
@@ -118,6 +123,10 @@ for index, row in delegated_df[delegated_df['ip_version'] == 'ipv4'].iterrows():
     final_ip = initial_ip + count - 1
     
     cidr_networks = iprange_to_cidrs(initial_ip, final_ip)
+    
+    if len(cidr_networks) > 1:
+        with open(nonCIDR_file, 'ar') as nonCIDR:
+            nonCIDR.write('{}|{}\n'.format(row['network'], row['count/prefLength']))
     
     for net in cidr_networks:
         ipv4_cidr_del_df.loc[ipv4_cidr_del_df.shape[0]] = [row['ip_version'],

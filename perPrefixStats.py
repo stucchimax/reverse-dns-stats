@@ -374,8 +374,14 @@ for index, alloc_row in delegated_df.iterrows():
                     else:
                         nameserversDict[nameserver]['domains'].append(domain)
                         if alloc_row['ip_version'] == 'ipv4':
+                            if 'numOfUnits_IPv4' not in nameserversDict[nameserver]:
+                                nameserversDict[nameserver]['numOfUnits_IPv4'] = 0
+                                
                             nameserversDict[nameserver]['numOfUnits_IPv4'] += units_covered_by_domain
                         else:
+                            if 'numOfUnits_IPv6' not in nameserversDict[nameserver]:
+                                nameserversDict[nameserver]['numOfUnits_IPv6'] = 0
+                                
                             nameserversDict[nameserver]['numOfUnits_IPv6'] += units_covered_by_domain
         
                         

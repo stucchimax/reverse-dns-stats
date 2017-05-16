@@ -29,13 +29,15 @@ os.chdir(os.path.dirname(os.path.realpath(__file__)))
 import pandas as pd
 import pickle
 from datetime import date
-from netaddr import IPRange, IPSet, IPNetwork, IPAddress
+from netaddr import IPRange, IPSet, IPNetwork, IPAddress, iprange_to_cidrs
 from math import log
 import re
 from requests import Session
 import logging
 
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.DEBUG)
+
+DEBUG = False
 
 def convertIPv6RevDomainToNetwork(domain):
     domain = domain.replace('.ip6.arpa', '')
@@ -57,8 +59,6 @@ def convertIPv6RevDomainToNetwork(domain):
     
 def getIPv4PrefLengthFromCount(count):
     return int(32 - log(count, 2))
-    
-DEBUG = False
 
 prefixStats_file = './revDel_perPrefix_stats.csv'
 with open(prefixStats_file, 'wb') as stats:
@@ -100,8 +100,42 @@ if DEBUG:
     delegated_df = pd.concat([delegated_df[delegated_df['network'] == '137.223.0.0'],
                               delegated_df[delegated_df['ip_version'] == 'ipv6'].head(10),
                               delegated_df[delegated_df['ip_version'] == 'ipv4'].head(10)])
+#    delegated_df = delegated_df[delegated_df['network'] == '194.11.32.0']
     delegated_df = delegated_df.reset_index()
     del delegated_df['index']
+
+delegated_df['prefLength'] = delegated_df['count/prefLength']
+
+ipv4_cidr_del_df = pd.DataFrame(columns=delegated_df.columns)
+        
+# For IPv4, the 'count/prefLength' column includes the number of IP addresses delegated
+# but it not necessarily corresponds to a CIDR block.
+# Therefore we convert each row to the corresponding CIDR block or blocks,
+# using the 'prefLength' column to save the prefix length.
+for index, row in delegated_df[delegated_df['ip_version'] == 'ipv4'].iterrows():
+    initial_ip = IPAddress(row['network'])
+    count = int(row['count/prefLength'])
+    final_ip = initial_ip + count - 1
+    
+    cidr_networks = iprange_to_cidrs(initial_ip, final_ip)
+    
+    for net in cidr_networks:
+        ipv4_cidr_del_df.loc[ipv4_cidr_del_df.shape[0]] = [row['ip_version'],
+                                                            str(net.network),
+                                                            str(net.size),
+                                                            row['allocationDate'],
+                                                            row['CC'],
+                                                            row['opaque_id'],
+                                                            int(net.prefixlen)]
+                                                            
+delegated_df = pd.concat([ipv4_cidr_del_df,
+                          delegated_df[delegated_df['ip_version'] == 'ipv6']])
+
+delegated_df['prefLength'] = delegated_df['prefLength'].astype(int).astype(str)
+
+#delegated_df.loc[delegated_df['ip_version'] == 'ipv4', 'prefLength'] = delegated_df['count/prefLength'].apply(getIPv4PrefLengthFromCount)
+
+delegated_df['prefix'] = delegated_df[['network', 'prefLength']].apply(lambda x: '/'.join(x), axis=1)
 
 domainDB_file = './domains.csv'
 domainDB_columns = ['domain',
@@ -137,11 +171,6 @@ lastModifiedAges = []
 epoch = date(1970, 1, 1)
 
 # We obtain the set of IP prefixes that have been allocated by RIPE NCC
-delegated_df['prefLength'] = delegated_df['count/prefLength']
-delegated_df.loc[delegated_df['ip_version'] == 'ipv4', 'prefLength'] = delegated_df['count/prefLength'].apply(getIPv4PrefLengthFromCount)
-delegated_df['prefLength'] = delegated_df['prefLength'].astype(str)
-
-delegated_df['prefix'] = delegated_df[['network', 'prefLength']].apply(lambda x: '/'.join(x), axis=1)
 delegated_IPSet = IPSet(delegated_df['prefix'].tolist())
 
 # Now we obtain the set of IP prefixes for which there are domain objects in the database
@@ -221,7 +250,7 @@ s = Session()
 for index, alloc_row in delegated_df.iterrows():
     prefix = alloc_row['prefix']
     
-    if len(IPSet([prefix]).intersection(prefixes_withDomains).iter_cidrs()) > 0:
+    if len((IPSet([prefix]).intersection(prefixes_withDomains)).iter_cidrs()) > 0:
         if alloc_row['ip_version'] == 'ipv4':
             longestPref = 24
         else:
@@ -229,7 +258,7 @@ for index, alloc_row in delegated_df.iterrows():
         
         logging.debug('Starting to work with prefix {}\n'.format(prefix))
         
-        prefixesInDomainsDB = [str(pref) for pref in IPSet([prefix]).intersection(domains_IPSet).iter_cidrs()]
+        prefixesInDomainsDB = [str(pref) for pref in (IPSet([prefix]).intersection(domains_IPSet)).iter_cidrs()]
         domainsForPrefix = domains_df[domains_df['prefix'].isin(prefixesInDomainsDB)]['domain'].astype(str).tolist()
         
         url = '{}/data.json?resource={}'.format(revDNSconsistency_service, prefix)
@@ -243,8 +272,8 @@ for index, alloc_row in delegated_df.iterrows():
                 domains_list = response.json()['data']['prefixes'][alloc_row['ip_version']][prefix]['domains']
                 filtered_domains_list = [domain for domain in domains_list if domain['domain'] in domainsForPrefix]
 
-        except Exception as e:
-            logging.debug(e)
+        except KeyError as e:
+            logging.debug('KeyError: {}'.format(e))
    
         # For IPv4 a unit is a /24 prefix. For IPv6 a unit is a /64 prefix.
         total_units = pow(2, longestPref - int(alloc_row['prefLength']))
@@ -458,11 +487,6 @@ with open(prefixes_woDomains_file, 'wb') as f:
         network_ip = row['network']
         if IPAddress(network_ip) in prefixes_withoutDomains:
             f.write('{}/{}\n'.format(network_ip, row['prefLength']))
-
-# Just for DEBUG
-print 'Delegated IPSet length: {}'.format(len(delegated_IPSet.iter_cidrs()))
-print 'Prefixes with domains length: {}'.format(len(prefixes_withDomains.iter_cidrs()))
-print 'Prefixes without domains length: {}'.format(len(prefixes_withoutDomains.iter_cidrs()))
 
 # TODO Get creation date for prefixes that don't currently have domains in
 # the DB but could have had domains in the past and compute revDelLatency

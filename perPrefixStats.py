@@ -33,6 +33,7 @@ from netaddr import IPRange, IPSet, IPNetwork, IPAddress, iprange_to_cidrs
 from math import log
 import re
 from requests import Session
+from requests.exceptions import ConnectionError
 import logging
 
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.DEBUG)
@@ -274,15 +275,28 @@ for index, alloc_row in delegated_df.iterrows():
         
         filtered_domains_list = []
         
-        try:
-            response = s.get(url)
+        retries = 3
+        for attempt in range(retries):            
+            try:
+                response = s.get(url)
+    
+                if response.ok:
+                    domains_list = response.json()['data']['prefixes'][alloc_row['ip_version']][prefix]['domains']
+                    filtered_domains_list = [domain for domain in domains_list if domain['domain'] in domainsForPrefix]
 
-            if response.ok:
-                domains_list = response.json()['data']['prefixes'][alloc_row['ip_version']][prefix]['domains']
-                filtered_domains_list = [domain for domain in domains_list if domain['domain'] in domainsForPrefix]
-
-        except KeyError as e:
-            logging.debug('KeyError: {}'.format(e))
+                break
+            
+            except KeyError as e:
+                logging.debug('KeyError: {}'.format(e))
+                break
+                
+            except ConnectionError as c:
+                logging.debug('Connection Error ({}). Retrying'.format(c))
+                s = Session()
+            
+        if attempt == retries - 1:
+            logging.debug('Still getting a Connection Error after {} retries. Breaking'.format(retries))
+            break
    
         # For IPv4 a unit is a /24 prefix. For IPv6 a unit is a /64 prefix.
         total_units = pow(2, longestPref - int(alloc_row['prefLength']))
@@ -319,16 +333,26 @@ for index, alloc_row in delegated_df.iterrows():
                     if dnscheck_status == 'ERROR':
                         units_with_issues += units_covered_by_domain
                         dnsCheck_url = '{}/data.json?get_results=true&resource={}'.format(dnsCheck_service, domain_str)
-#                        r = urllib2.urlopen(dnsCheck_url)
-#                        text = r.read()
-#                        dns_check_obj = json.loads(text)
-#                        results = dns_check_obj['data']['results']
-                        response = s.get(dnsCheck_url)
-                        
-                        if response.ok:
-                            results = response.json()['data']['results']
-                        else:
-                            results = []
+
+                        results = []
+
+                        retries = 3
+                        for attempt in range(retries):            
+                            try:
+                                response = s.get(dnsCheck_url)
+                                
+                                if response.ok:
+                                    results = response.json()['data']['results']
+                                
+                            except ConnectionError as c:
+                                logging.debug('Connection Error ({}). Retrying'.format(c))
+                                s = Session()
+                            else:
+                                break
+                            
+                        if attempt == retries - 1:
+                            logging.debug('Still getting a Connection Error after {} retries. Breaking'.format(retries))
+                            break
                         
                         for result in results:
                             if result['class'] == 'error':
